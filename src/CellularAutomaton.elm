@@ -1,8 +1,8 @@
 module CellularAutomaton exposing (Model, Msg(..), init, main, update, view)
 
 import Browser
-import Html exposing (Html, div, input, label, text, table, tr, td, h1)
-import Html.Attributes exposing (type_, for)
+import Html exposing (Html, div, input, label, text, table, tr, td, h1, br)
+import Html.Attributes exposing (type_, for, value, name, id, checked)
 import Html.Events exposing (onInput, onClick)
 
 import Styles
@@ -23,6 +23,7 @@ type alias Model =
   { origin : List State
   , generations : Int
   , rule : Rule
+  , edge : EdgeType
   }
 
 type State
@@ -30,6 +31,11 @@ type State
   | Dead
 
 type alias Rule = (State, State, State) -> State
+
+type EdgeType
+  = AlwaysDead
+  | AlwaysAlive
+  | Loop
 
 flip state =
   case state of
@@ -39,8 +45,8 @@ flip state =
 init : () -> ( Model, Cmd Msg )
 init _ =
   (
-    { origin = []
-    , generations = 0
+    { origin = [Dead, Alive, Dead, Dead]
+    , generations = 6
     , rule = ( \r ->
         case r of
           ( Dead,  Dead,  Dead) ->  Dead
@@ -52,6 +58,7 @@ init _ =
           (Alive, Alive,  Dead) ->  Dead
           (Alive, Alive, Alive) ->  Dead
       )
+    , edge = AlwaysDead
     }
   , Cmd.none
   )
@@ -64,6 +71,7 @@ type Msg
   = NoOp
   | ColumnNumber String
   | GenerationChanged String
+  | EdgeChanged EdgeType
   | Flip Int
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -88,6 +96,9 @@ update msg model =
             |> Maybe.withDefault model.generations
       in
       ( { model | generations = nextGeneration }, Cmd.none )
+
+    EdgeChanged edge ->
+      ( { model | edge = edge }, Cmd.none )
 
     Flip index ->
       let
@@ -116,16 +127,41 @@ resize model size =
 view : Model -> Html Msg
 view model =
   div [] ( List.concat
-    [ numberInput "セル数" ColumnNumber "cells"
-    , numberInput "世代数" GenerationChanged "generations"
+    [ numberInput "セル数" "cells" (model.origin |> List.length)
+        |> (List.map << Html.map) ColumnNumber
+    , numberInput "世代数" "generations" model.generations
+        |> (List.map << Html.map) GenerationChanged
+    , [br[][]]
+    , radioButtons "末端処理" "edge" model.edge
+        [ ("死亡", AlwaysDead)
+        , ("生存", AlwaysAlive)
+        , ("末端をループ", Loop)
+        ]
+        |> mapEachNode EdgeChanged
+
     , [ originView model.origin ]
-    , [ descendantsView model.origin model.rule model.generations ]
+    , [ descendantsView model.origin model.edge model.rule model.generations ]
     ]
   )
 
-numberInput str dst name =
-  [ label [ for name ][ text str ]
-  , input [ type_ "number", onInput dst ][]
+numberInput : String -> String -> Int -> List (Html String)
+numberInput title name init_ =
+  [ label [ for name ][ text title ]
+  , input [ type_ "number", value (init_ |> String.fromInt), onInput identity ][]
+  ]
+
+radioButtons : String -> String -> msg -> List (String, msg) -> List (Html msg)
+radioButtons title group selected candidates =
+  (::)
+   (label [ for group ][ text title ])
+   (candidates
+    |> List.map (radioButton group selected)
+    |> List.concat)
+
+radioButton : String -> msg -> (String, msg) -> List (Html msg)
+radioButton group selected (name_, msg) =
+  [ input [ type_ "radio", name group, id name_, onClick msg, checked (msg == selected)][]
+  , label [ for name_ ][ text name_ ]
   ]
 
 originView : List State -> Html Msg
@@ -145,18 +181,38 @@ originView origin =
       Styles.originTable
       ( origin |> List.indexedMap cellView )
 
-descendantsView : List State -> Rule -> Int -> Html Msg
-descendantsView origin rule limit =
-  let rterm = Dead in
-  let lterm = Dead in
+descendantsView : List State -> EdgeType -> Rule -> Int -> Html Msg
+descendantsView origin edgeType rule limit =
   let
     step : List State -> List State
     step gen =
       let
+        getLterm cells =
+          case edgeType of
+            AlwaysDead -> Dead
+            AlwaysAlive -> Alive
+            Loop ->
+              cells
+                |> List.reverse
+                |> List.head
+                |> Maybe.withDefault Dead
+      in
+      let
+        getRterm cells =
+          case edgeType of
+            AlwaysDead -> Dead
+            AlwaysAlive -> Alive
+            Loop ->
+              cells
+                |> List.head
+                |> Maybe.withDefault Dead
+      in
+
+      let
         inner ngen l c pgen =
           case pgen |> List.head of
             Nothing ->
-              rule (l, c, rterm) :: ngen
+              rule (l, c, getRterm gen) :: ngen
                 |> List.reverse
             Just r ->
               inner ((rule (l, c, r)) :: ngen) c r (pgen |> List.tail |> Maybe.withDefault [])
@@ -165,9 +221,9 @@ descendantsView origin rule limit =
           [] ->
             []
           c :: [] ->
-            inner [] lterm c []
+            inner [] (getLterm gen) c []
           l :: c :: rest ->
-            inner [] lterm l (c :: rest)
+            inner [] (getLterm gen) l (c :: rest)
   in
 
   let
