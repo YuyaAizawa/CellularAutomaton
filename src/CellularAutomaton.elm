@@ -110,15 +110,15 @@ update msg model =
 
 resize : Model -> Maybe Int -> Model
 resize model size =
-  { model | origin =
-    size
-      |> Maybe.map
-        ( \s ->
-          List.range 1 s
-            |> List.map ( \_ -> Dead )
-        )
-      |> Maybe.withDefault model.origin
-  }
+  let currentSize = model.origin |> List.length in
+  let nextSize = size |> Maybe.withDefault currentSize in
+  let
+    nextOrigin =
+      if currentSize < nextSize
+      then List.append model.origin (Dead |> List.repeat (nextSize - currentSize))
+      else List.take nextSize model.origin
+  in
+    { model | origin = nextOrigin }
 
 
 
@@ -137,7 +137,7 @@ view model =
         , ("生存", AlwaysAlive)
         , ("末端をループ", Loop)
         ]
-        |> mapEachNode EdgeChanged
+        |> (List.map << Html.map) EdgeChanged
 
     , [ originView model.origin ]
     , [ descendantsView model.origin model.edge model.rule model.generations ]
