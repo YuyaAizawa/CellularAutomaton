@@ -136,13 +136,13 @@ resize model size =
 view : Model -> Html Msg
 view model =
   div [] ( List.concat
-    [ numberInput "セル数" "cells" (model.origin |> List.length)
+    [ numberInput "セル数" "cells" (model.origin |> List.length) 1 100
         |> (List.map << Html.map) ColumnNumber
     , [br[][]]
-    , numberInput "世代数" "generations" model.generations
+    , numberInput "世代数" "generations" model.generations 1 300
         |> (List.map << Html.map) GenerationChanged
     , [br[][]]
-    , numberInput "ルール #" "rule" model.rule
+    , numberInput "ルール #" "rule" model.rule 0 255
         |> (List.map << Html.map) RuleChanged
     , [br[][]]
     , radioButtons "末端処理" "edge" model.edge
@@ -157,10 +157,15 @@ view model =
     ]
   )
 
-numberInput : String -> String -> Int -> List (Html String)
-numberInput title name init_ =
+numberInput : String -> String -> Int -> Int -> Int -> List (Html String)
+numberInput title name value min max =
   [ label [ for name ][ text title ]
-  , input [ type_ "number", value (init_ |> String.fromInt), onInput identity ][]
+  , input
+      [ type_ "number"
+      , Html.Attributes.value (value |> String.fromInt)
+      , Html.Attributes.min (min |> String.fromInt)
+      , Html.Attributes.max (max |> String.fromInt)
+      , onInput identity ][]
   ]
 
 radioButtons : String -> String -> msg -> List (String, msg) -> List (Html msg)
