@@ -1,5 +1,6 @@
 module CellularAutomaton exposing (Model, Msg(..), init, main, update, view)
 
+import Bitwise
 import Browser
 import Html exposing (Html, div, input, label, text, table, tr, td, h1, br)
 import Html.Attributes exposing (type_, for, value, name, id, checked)
@@ -22,7 +23,7 @@ main =
 type alias Model =
   { origin : List State
   , generations : Int
-  , rule : Rule
+  , rule : Int
   , edge : EdgeType
   }
 
@@ -47,22 +48,26 @@ init _ =
   (
     { origin = [Dead, Alive, Dead, Dead]
     , generations = 6
-    , rule = ( \r ->
-        case r of
-          ( Dead,  Dead,  Dead) ->  Dead
-          ( Dead,  Dead, Alive) -> Alive
-          ( Dead, Alive,  Dead) -> Alive
-          ( Dead, Alive, Alive) -> Alive
-          (Alive,  Dead,  Dead) -> Alive
-          (Alive,  Dead, Alive) ->  Dead
-          (Alive, Alive,  Dead) ->  Dead
-          (Alive, Alive, Alive) ->  Dead
-      )
+    , rule = 30
     , edge = AlwaysDead
     }
   , Cmd.none
   )
 
+ruleFromInt : Int -> Rule
+ruleFromInt index =
+  let bitAt i = index |> Bitwise.shiftRightBy i |> Bitwise.and 1 |> (==) 1 in
+  ( \r ->
+    case r of
+      ( Dead,  Dead,  Dead) -> if bitAt 0 then Alive else Dead
+      ( Dead,  Dead, Alive) -> if bitAt 1 then Alive else Dead
+      ( Dead, Alive,  Dead) -> if bitAt 2 then Alive else Dead
+      ( Dead, Alive, Alive) -> if bitAt 3 then Alive else Dead
+      (Alive,  Dead,  Dead) -> if bitAt 4 then Alive else Dead
+      (Alive,  Dead, Alive) -> if bitAt 5 then Alive else Dead
+      (Alive, Alive,  Dead) -> if bitAt 6 then Alive else Dead
+      (Alive, Alive, Alive) -> if bitAt 7 then Alive else Dead
+  )
 
 
 ---- UPDATE ----
@@ -72,6 +77,7 @@ type Msg
   | ColumnNumber String
   | GenerationChanged String
   | EdgeChanged EdgeType
+  | RuleChanged String
   | Flip Int
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -99,6 +105,9 @@ update msg model =
 
     EdgeChanged edge ->
       ( { model | edge = edge }, Cmd.none )
+
+    RuleChanged rule ->
+      ( { model | rule = rule |> String.toInt |> Maybe.withDefault model.rule }, Cmd.none )
 
     Flip index ->
       let
@@ -129,8 +138,12 @@ view model =
   div [] ( List.concat
     [ numberInput "セル数" "cells" (model.origin |> List.length)
         |> (List.map << Html.map) ColumnNumber
+    , [br[][]]
     , numberInput "世代数" "generations" model.generations
         |> (List.map << Html.map) GenerationChanged
+    , [br[][]]
+    , numberInput "ルール #" "rule" model.rule
+        |> (List.map << Html.map) RuleChanged
     , [br[][]]
     , radioButtons "末端処理" "edge" model.edge
         [ ("死亡", AlwaysDead)
@@ -140,7 +153,7 @@ view model =
         |> (List.map << Html.map) EdgeChanged
 
     , [ originView model.origin ]
-    , [ descendantsView model.origin model.edge model.rule model.generations ]
+    , [ descendantsView model.origin model.edge (ruleFromInt model.rule) model.generations ]
     ]
   )
 
