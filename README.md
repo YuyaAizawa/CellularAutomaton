@@ -3,3 +3,6 @@
 
 ## Build
 elm make src/CellularAutomaton.elm --output js/CellularAutomaton.js
+
+## Pages
+https://yuyaaizawa.github.io/CellularAutomaton/
