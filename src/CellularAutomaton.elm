@@ -1,17 +1,17 @@
 module CellularAutomaton exposing (Model, Msg(..), init, main, update, view)
 
+import Bitwise
 import Browser
-import Html exposing (Html, div, input, label, text, table, tr, td, h1, br)
+import Html exposing (Html, div, input, label, text, table, tr, td, h1, br, button)
 import Html.Attributes exposing (type_, for, value, name, id, checked)
 import Html.Events exposing (onInput, onClick)
 
 import Styles
 
 main =
-  Browser.element
+  Browser.sandbox
     { init = init
     , update = update
-    , subscriptions = subscriptions
     , view = view
     }
 
@@ -22,8 +22,9 @@ main =
 type alias Model =
   { origin : List State
   , generations : Int
-  , rule : Rule
+  , rule : Int
   , edge : EdgeType
+  , ruleDetail : Bool
   }
 
 type State
@@ -42,71 +43,87 @@ flip state =
     Alive -> Dead
     Dead -> Alive
 
-init : () -> ( Model, Cmd Msg )
-init _ =
-  (
-    { origin = [Dead, Alive, Dead, Dead]
-    , generations = 6
-    , rule = ( \r ->
-        case r of
-          ( Dead,  Dead,  Dead) ->  Dead
-          ( Dead,  Dead, Alive) -> Alive
-          ( Dead, Alive,  Dead) -> Alive
-          ( Dead, Alive, Alive) -> Alive
-          (Alive,  Dead,  Dead) -> Alive
-          (Alive,  Dead, Alive) ->  Dead
-          (Alive, Alive,  Dead) ->  Dead
-          (Alive, Alive, Alive) ->  Dead
-      )
-    , edge = AlwaysDead
-    }
-  , Cmd.none
+init : Model
+init =
+  { origin = [Dead, Alive, Dead, Dead]
+  , generations = 6
+  , rule = 30
+  , ruleDetail = False
+  , edge = AlwaysDead
+  }
+
+ruleFromInt : Int -> Rule
+ruleFromInt index =
+  ( \pgen ->
+    case pgen of
+      ( Dead,  Dead,  Dead) -> if bitAt 0 index then Alive else Dead
+      ( Dead,  Dead, Alive) -> if bitAt 1 index then Alive else Dead
+      ( Dead, Alive,  Dead) -> if bitAt 2 index then Alive else Dead
+      ( Dead, Alive, Alive) -> if bitAt 3 index then Alive else Dead
+      (Alive,  Dead,  Dead) -> if bitAt 4 index then Alive else Dead
+      (Alive,  Dead, Alive) -> if bitAt 5 index then Alive else Dead
+      (Alive, Alive,  Dead) -> if bitAt 6 index then Alive else Dead
+      (Alive, Alive, Alive) -> if bitAt 7 index then Alive else Dead
   )
 
-
+bitAt : Int -> Int -> Bool
+bitAt i index =
+  index
+    |> Bitwise.shiftRightBy i
+    |> Bitwise.and 1
+    |> (==) 1
 
 ---- UPDATE ----
 
 type Msg
-  = NoOp
-  | ColumnNumber String
-  | GenerationChanged String
-  | EdgeChanged EdgeType
-  | Flip Int
+  = ColumnChange String
+  | GenerationChange String
+  | EdgeChange EdgeType
+  | RuleChange String
+  | DetailVisibility
+  | RuleFlip Int
+  | OriginFlip Int
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+update : Msg -> Model -> Model
 update msg model =
   case msg of
-    NoOp -> ( model, Cmd.none )
-
-    ColumnNumber str ->
+    ColumnChange str ->
       let
         nextModel =
           str
             |> String.toInt
             |> resize model
       in
-      ( nextModel, Cmd.none )
+      nextModel
 
-    GenerationChanged str ->
+    GenerationChange str ->
       let
         nextGeneration =
           str
             |> String.toInt
             |> Maybe.withDefault model.generations
       in
-      ( { model | generations = nextGeneration }, Cmd.none )
+      { model | generations = nextGeneration }
 
-    EdgeChanged edge ->
-      ( { model | edge = edge }, Cmd.none )
+    EdgeChange edge ->
+      { model | edge = edge }
 
-    Flip index ->
+    RuleChange rule ->
+      { model | rule = rule |> String.toInt |> Maybe.withDefault model.rule }
+
+    DetailVisibility ->
+      { model | ruleDetail = not model.ruleDetail }
+
+    RuleFlip bit ->
+      { model | rule = model.rule |> Bitwise.xor (Bitwise.shiftLeftBy bit 1) }
+
+    OriginFlip index ->
       let
         origin =
           model.origin
             |> List.indexedMap (\i -> \s -> if i == index then flip s else s)
       in
-      ( { model | origin = origin }, Cmd.none )
+      { model | origin = origin }
 
 resize : Model -> Maybe Int -> Model
 resize model size =
@@ -127,27 +144,39 @@ resize model size =
 view : Model -> Html Msg
 view model =
   div [] ( List.concat
-    [ numberInput "セル数" "cells" (model.origin |> List.length)
-        |> (List.map << Html.map) ColumnNumber
-    , numberInput "世代数" "generations" model.generations
-        |> (List.map << Html.map) GenerationChanged
+    [ [h1[][text "せるお～とまとん"]]
+    , numberInput "ルール #" "rule" model.rule 0 255
+        |> (List.map << Html.map) RuleChange
+    , [button[onClick DetailVisibility][text "詳細"]]
+    , ruleDetailView model.ruleDetail model.rule
+    , [br[][]]
+    , numberInput "セル数" "cells" (model.origin |> List.length) 1 100
+        |> (List.map << Html.map) ColumnChange
+    , [br[][]]
+    , numberInput "世代数" "generations" model.generations 1 300
+        |> (List.map << Html.map) GenerationChange
     , [br[][]]
     , radioButtons "末端処理" "edge" model.edge
         [ ("死亡", AlwaysDead)
         , ("生存", AlwaysAlive)
         , ("末端をループ", Loop)
         ]
-        |> (List.map << Html.map) EdgeChanged
+        |> (List.map << Html.map) EdgeChange
 
     , [ originView model.origin ]
-    , [ descendantsView model.origin model.edge model.rule model.generations ]
+    , [ descendantsView model.origin model.edge (ruleFromInt model.rule) model.generations ]
     ]
   )
 
-numberInput : String -> String -> Int -> List (Html String)
-numberInput title name init_ =
+numberInput : String -> String -> Int -> Int -> Int -> List (Html String)
+numberInput title name value min max =
   [ label [ for name ][ text title ]
-  , input [ type_ "number", value (init_ |> String.fromInt), onInput identity ][]
+  , input
+      [ type_ "number"
+      , Html.Attributes.value (value |> String.fromInt)
+      , Html.Attributes.min (min |> String.fromInt)
+      , Html.Attributes.max (max |> String.fromInt)
+      , onInput identity ][]
   ]
 
 radioButtons : String -> String -> msg -> List (String, msg) -> List (Html msg)
@@ -164,6 +193,37 @@ radioButton group selected (name_, msg) =
   , label [ for name_ ][ text name_ ]
   ]
 
+ruleDetailView : Bool -> Int -> List (Html Msg)
+ruleDetailView visible ruleIndex =
+  if not visible
+    then []
+    else
+      div Styles.ruleDetail
+        (List.range 0 7
+          |> List.map (editableRule ruleIndex))
+        |> List.singleton
+
+editableRule : Int -> Int -> Html Msg
+editableRule ruleIndex bit =
+  let
+    cellStyle alive =
+      List.append
+        Styles.cell
+        ( if alive then Styles.alive else Styles.dead )
+  in
+    div Styles.ruleEditor
+      [ table Styles.resultTable
+        [ tr[]
+          [ td(cellStyle (bitAt 0 bit))[]
+          , td(cellStyle (bitAt 1 bit))[]
+          , td(cellStyle (bitAt 2 bit))[] ] ]
+      , text "↓"
+      , table Styles.originTable
+        [tr[][ td(onClick (RuleFlip bit) :: cellStyle (bitAt bit ruleIndex))[]]]
+      ]
+
+
+
 originView : List State -> Html Msg
 originView origin =
   let
@@ -174,7 +234,7 @@ originView origin =
         , case state of
             Alive -> Styles.alive
             Dead -> Styles.dead
-        , [ onClick (Flip index) ]
+        , [ onClick (OriginFlip index) ]
         ]) []
   in
     table
@@ -253,8 +313,3 @@ descendantsView origin edgeType rule limit =
   in
     inner [] limit origin
       |> table Styles.resultTable
-
-
-
-subscriptions : Model -> Sub Msg
-subscriptions model = Sub.none

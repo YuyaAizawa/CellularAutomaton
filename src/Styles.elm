@@ -1,4 +1,4 @@
-module Styles exposing (cell, alive, dead, originTable, resultTable)
+module Styles exposing (cell, alive, dead, originTable, resultTable, ruleEditor, ruleDetail)
 
 import Html.Attributes exposing (style)
 
@@ -19,3 +19,16 @@ originTable =
 
 resultTable =
   []
+
+ruleDetail =
+  [ style "display" "flex"
+  , style "flex-flow" "row wrap"
+  ]
+
+ruleEditor =
+  [ style "display" "flex"
+  , style "flex-flow" "column nowrap"
+  , style "justify-content" "center"
+  , style "align-items" "center"
+  , style "margin" "0.3em"
+  ]
